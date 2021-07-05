@@ -1,3 +1,40 @@
+""" Authentication """
+
+import jwt, datetime
+
+
+def get_contents_of_file(file_name):
+
+    with open("./metagov/plugins/github/config/" + file_name) as f:
+        lines = f.readlines()
+    if len(lines) == 1:
+        return lines[0]
+    else:
+        return "".join(lines)
+
+
+def get_jwt():
+    payload = {
+        # GitHub App's identifier
+        "iss": get_contents_of_file("app_id"),
+        # issued at time, 60 seconds in the past to allow for clock drift
+        "iat": int(datetime.datetime.now().timestamp()) - 60,
+        # JWT expiration time (10 minute maximum)
+        "exp": int(datetime.datetime.now().timestamp()) + (9 * 60)
+    }
+    private_key = get_contents_of_file("metagovapp.private-key.pem")
+    return jwt.encode(payload, private_key, algorithm="RS256")
+
+
+# NOTE: may not actually need this? I don't think the installation access token is returned encoded
+def decode_payload(payload):
+    public_key = get_contents_of_file("metagovapp.private-key.pem.pub")
+    return jwt.decode(payload, public_key, algorithms=["RS256"])
+
+
+""" Text generation """
+
+
 def create_issue_text(vote_type, parameters):
 
     question = parameters.pop("question")

@@ -6,7 +6,7 @@ temporary_plugin_config_schema = {
         "user": {
             "type": "string",
             "description": "Actions will be taken on behalf of this user."
-        }
+        },
         "personal_access_token": {
             "type": "string",
             "description": "Personal access token for user"
@@ -14,6 +14,20 @@ temporary_plugin_config_schema = {
     },
     "required": ["user", "personal_access_token"],
 }
+
+
+github_app_config_schema = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "installation_id": {
+            "type": "string",
+            "description": "Installation_ID can be gotten from github after manually installing app."
+        }
+    },
+    "required": ["installation_id"],
+}
+
 
 plugin_config_schema = {
     "type": "object",

@@ -5,16 +5,38 @@ import metagov.core.plugin_decorators as Registry
 from metagov.core.models import Plugin, GovernanceProcess, ProcessStatus
 from metagov.core.errors import PluginErrorInternal
 import metagov.plugins.github.schemas as Schemas
-from metagov.plugins.github.utils import create_issue_text, close_comment_vote_text, close_react_vote_text
+from metagov.plugins.github.utils import (create_issue_text, close_comment_vote_text,
+    close_react_vote_text, get_jwt)
 
 
 @Registry.plugin
 class Github(Plugin):
     name = 'github'
-    config_schema = Schemas.temporary_plugin_config_schema   # for now using personal access token
+    config_schema = Schemas.github_app_config_schema
 
     class Meta:
         proxy = True
+
+    def initialize(self):
+
+        # walk installing user through installation, return with installation_id
+        # for now, user manually installs apps, gets ID, and adds it in plugin schema
+        installation_id = self.config["installation_id"]
+        self.state.set("installation_id", installation_id)
+
+        # get installation access token using installation_id
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": f"Bearer {get_jwt()}"
+        }
+        url = f"https://api.github.com/app/installations/{installation_id}/access_tokens"
+        resp = requests.request("POST", url, headers=headers)
+
+        if not resp.ok:
+            raise PluginErrorInternal(resp.text)
+        if resp.content:
+            token = resp.json()["token"]
+            self.state.set("installation_access_token", token)
 
     def parse_github_webhook(self, request):
 
@@ -34,15 +56,15 @@ class Github(Plugin):
         action_type, action_target_type, initiator, body = self.parse_github_webhook(request)
         # self.send_event_to_driver(event_type=f"{action_type} {action_target_type}", data=body, initiator=initiator)
 
-    def github_request(self, method, route, data=None, headers=None):
-        USERNAME, PERSONAL_ACCESS_TOKEN = ,
+    def github_request(self, method, route, data=None, add_headers=None):
+        headers = {
+            "Authorization": f"token {self.state.get('installation_access_token')}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        if add_headers:
+            headers.update(add_headers)
         url = f"https://api.github.com{route}"
-        if headers:
-            resp = requests.request(method, url, headers=headers, json=data,
-                auth=(self.config["user"], self.config["personal_access_token"]))
-        else:
-            resp = requests.request(method, url, json=data,
-                auth=(self.config["user"],self.config["personal_access_token"]))
+        resp = requests.request(method, url, headers=headers, json=data)
         if not resp.ok:
             raise PluginErrorInternal(resp.text)
         if resp.content:
@@ -110,7 +132,7 @@ class GithubIssueReactVote(GovernanceProcess):
         # Get issue react count
         headers = {"Accept": "application/vnd.github.squirrel-girl-preview"}
         reactions = self.plugin_inst.github_request(
-            method="get", route=f"/repos/{owner}/{repo}/issues/{issue_number}/reactions", headers=headers)
+            method="get", route=f"/repos/{owner}/{repo}/issues/{issue_number}/reactions", add_headers=headers)
 
         upvotes, downvotes = 0, 0
         for reaction in reactions:
