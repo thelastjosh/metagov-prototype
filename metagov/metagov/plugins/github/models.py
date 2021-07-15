@@ -1,4 +1,4 @@
-import requests, json
+import requests, json, logging
 from collections import Counter
 
 import metagov.core.plugin_decorators as Registry
@@ -7,6 +7,8 @@ from metagov.core.errors import PluginErrorInternal
 import metagov.plugins.github.schemas as Schemas
 from metagov.plugins.github.utils import (create_issue_text, close_comment_vote_text,
     close_react_vote_text, get_jwt)
+
+logger = logging.getLogger(__name__)
 
 
 @Registry.plugin
@@ -17,10 +19,10 @@ class Github(Plugin):
     class Meta:
         proxy = True
 
-    def initialize(self):
+    def refresh_token(self):
+        """Requests a new installation access token from Github using a JWT signed by private key."""
 
-        # walk installing user through installation, return with installation_id
-        # for now, user manually installs apps, gets ID, and adds it in plugin schema
+        # for now, we assume user manually installs apps, gets ID, and adds it in plugin schema
         installation_id = self.config["installation_id"]
         self.state.set("installation_id", installation_id)
 
@@ -33,10 +35,15 @@ class Github(Plugin):
         resp = requests.request("POST", url, headers=headers)
 
         if not resp.ok:
+            logger.error(f"Error refreshing token: status {resp.status_code}, details: {resp.text}")
             raise PluginErrorInternal(resp.text)
         if resp.content:
             token = resp.json()["token"]
             self.state.set("installation_access_token", token)
+
+    def initialize(self):
+        self.refresh_token()
+        logger.info(f"Initialized Slack Plugin for community with installation ID {self.config['installation_id']}")
 
     def parse_github_webhook(self, request):
 
@@ -54,18 +61,30 @@ class Github(Plugin):
     @Registry.webhook_receiver()
     def github_webhook_receiver(self, request):
         action_type, action_target_type, initiator, body = self.parse_github_webhook(request)
-        # self.send_event_to_driver(event_type=f"{action_type} {action_target_type}", data=body, initiator=initiator)
+        logger.info(f"Received webhook event '{action_type} {action_target_type}' by user {initiator['user_id']}")
+        self.send_event_to_driver(event_type=f"{action_type} {action_target_type}", data=body, initiator=initiator)
 
-    def github_request(self, method, route, data=None, add_headers=None):
+    def github_request(self, method, route, data=None, add_headers=None, refresh=False):
+        """Makes request to Github. If status code returned is 401 (bad credentials), refreshes the
+        access token and tries again. Refresh parameter is used to make sure we only try once."""
+
         headers = {
             "Authorization": f"token {self.state.get('installation_access_token')}",
             "Accept": "application/vnd.github.v3+json"
         }
         if add_headers:
             headers.update(add_headers)
+
         url = f"https://api.github.com{route}"
+        logger.info(f"Making request {method} to {route}")
         resp = requests.request(method, url, headers=headers, json=data)
+
+        if resp.status_code == 401 and refresh == False:
+            logger.info(f"Bad credentials, refreshing token and retrying")
+            self.refresh_token()
+            return self.github_request(method=method, route=route, data=data, add_header=add_headers, refresh=True)
         if not resp.ok:
+            logger.error(f"Request error for {method}, {route}; status {resp.status_code}, details: {resp.text}")
             raise PluginErrorInternal(resp.text)
         if resp.content:
             return resp.json()
@@ -78,7 +97,7 @@ class Github(Plugin):
         output_schema=None
     )
     def get_issues(self, parameters):  # TODO: replace with something like the Slack plugin's method method
-        owner, repo = parameters["owner_name"], parameters["repo_name"]
+        owner, repo = self.config["owner"], parameters["repo_name"]
         issues = self.github_request(method="get", route=f"/repos/{owner}/{repo}/issues")
         return {"issue_count": len(issues), "issues": issues}
 
@@ -89,7 +108,7 @@ class Github(Plugin):
         output_schema=None
     )
     def create_issue(self, parameters):  # TODO: replace with something like the Slack plugin's method method
-        owner, repo = parameters["owner_name"], parameters["repo_name"]
+        owner, repo = self.config["owner"], parameters["repo_name"]
         data = {"title": parameters["title"], "body": parameters["body"]}
         return self.github_request(method="post", route=f"/repos/{owner}/{repo}/issues", data=data)
 
@@ -110,7 +129,7 @@ class GithubIssueReactVote(GovernanceProcess):
     def start(self, parameters):
 
         # copy owner & repo to state
-        self.state.set("owner", parameters["owner_name"])
+        self.state.set("owner", self.plugin_inst.config["owner"])
         self.state.set("repo", parameters["repo_name"])
         self.state.set("max_votes", parameters["max_votes"])
 
@@ -121,6 +140,7 @@ class GithubIssueReactVote(GovernanceProcess):
         self.state.set("issue_number", issue["number"])
         self.status = ProcessStatus.PENDING.value
         self.save()
+        logger.info(f"Starting IssueReactVote with issue # {issue['number']}")
 
     def get_basic_info(self):
         return self.state.get("owner"), self.state.get("repo"), self.state.get("issue_number")
@@ -167,14 +187,16 @@ class GithubIssueReactVote(GovernanceProcess):
         self.close_vote(upvotes, downvotes, result)
         self.status = ProcessStatus.COMPLETED.value
         self.save()
+        owner, repo, issue_number = self.get_basic_info()
+        logger.info(f"Closing IssueReactVote {owner}/{repo} - issue # {issue_number}")
 
     def update(self):
-
         upvotes, downvotes, result = self.get_vote_data()
         max_votes = self.state.get("max_votes")
-
         if max_votes and (upvotes + downvotes >= max_votes):
             self.close()
+        owner, repo, issue_number = self.get_basic_info()
+        logger.info(f"Updating IssueReactVote {owner}/{repo} - issue # {issue_number}")
 
 
 @Registry.governance_process
@@ -189,7 +211,7 @@ class GithubIssueCommentVote(GovernanceProcess):
     def start(self, parameters):
 
         # copy owner & repo to state
-        self.state.set("owner", parameters["owner_name"])
+        self.state.set("owner", self.plugin_inst.config["owner"])
         self.state.set("repo", parameters["repo_name"])
         self.state.set("max_votes", parameters["max_votes"])
 
@@ -201,6 +223,7 @@ class GithubIssueCommentVote(GovernanceProcess):
         self.state.set("issue_number", issue["number"])
         self.status = ProcessStatus.PENDING.value
         self.save()
+        logger.info(f"Starting IssueCommentVote with issue # {issue['number']}")
 
     def get_basic_info(self):
         return self.state.get("owner"), self.state.get("repo"), self.state.get("issue_number")
@@ -247,6 +270,8 @@ class GithubIssueCommentVote(GovernanceProcess):
         self.close_vote(voter_list, votes)
         self.status = ProcessStatus.COMPLETED.value
         self.save()
+        owner, repo, issue_number = self.get_basic_info()
+        logger.info(f"Closing IssueCommentVote {owner}/{repo} - issue # {issue_number}")
 
     def receive_webhook(self, request):
         action_type, action_target_type, initiator, body = self.plugin_inst.parse_github_webhook(request)

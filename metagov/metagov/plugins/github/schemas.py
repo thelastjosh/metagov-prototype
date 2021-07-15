@@ -1,25 +1,11 @@
-
-temporary_plugin_config_schema = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "user": {
-            "type": "string",
-            "description": "Actions will be taken on behalf of this user."
-        },
-        "personal_access_token": {
-            "type": "string",
-            "description": "Personal access token for user"
-        }
-    },
-    "required": ["user", "personal_access_token"],
-}
-
-
 github_app_config_schema = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
+        "owner": {
+            "type": "string",
+            "description": "Name of user or organization that has installed the app."
+        },
         "installation_id": {
             "type": "string",
             "description": "Installation_ID can be gotten from github after manually installing app."
@@ -28,18 +14,6 @@ github_app_config_schema = {
     "required": ["installation_id"],
 }
 
-
-plugin_config_schema = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "api_key": {
-            "type": "string",
-            "description": "Github API key for a bot user that is an admin. Actions will be taken on behalf of this user."
-        }
-    },
-    "required": ["api_key"],
-}
 
 # Webhook Event Schemas
 
@@ -57,21 +31,19 @@ plugin_config_schema = {
 get_issues_parameters = {
     "type": "object",
     "properties": {
-        "owner_name": {"type": "string"},
         "repo_name": {"type": "string"}
     },
-    "required": ["owner_name", "repo_name"],
+    "required": ["repo_name"],
 }
 
 create_issue_parameters = {
     "type": "object",
     "properties": {
-        "owner_name": {"type": "string"},
         "repo_name": {"type": "string"},
         "title": {"type": "string"},
         "body": {"type": "string"}
     },
-    "required": ["owner_name", "repo_name", "title", "body"],
+    "required": ["repo_name", "title", "body"],
 }
 
 # Governance Process Schemas
@@ -80,7 +52,6 @@ issue_react_vote_parameters = {
     "type": "object",
     "properties": {
         # Required
-        "owner_name": {"type": "string"},
         "repo_name": {"type": "string"},
         "question": {"type": "string"},
         # Optional
@@ -88,14 +59,13 @@ issue_react_vote_parameters = {
         "max_votes": {"type": "integer"},
         "track_progress": {"type": "string"}
     },
-    "required": ["owner_name", "repo_name", "question"],
+    "required": ["repo_name", "question"],
 }
 
 issue_comment_vote_parameters = {
     "type": "object",
     "properties": {
         # Required
-        "owner_name": {"type": "string"},
         "repo_name": {"type": "string"},
         "question": {"type": "string"},
         # Optional
@@ -103,5 +73,5 @@ issue_comment_vote_parameters = {
         "max_votes": {"type": "integer"},
         "track_progress": {"type": "string"}
     },
-    "required": ["owner_name", "repo_name", "question"],
+    "required": ["repo_name", "question"],
 }
