@@ -9,7 +9,6 @@ This tutorial will show you have to write a Metagov Plugin. It will demonstrate 
 
 This tutorial assumes that you have the Metagov Django service set up for local development.
 
-
 Creating a Plugin
 *****************
 
@@ -36,6 +35,7 @@ This new model goes in the ``models.py`` file. Decorate the class with the ``@Re
         class Meta:
             proxy = True # required
 
+Because these models are proxy models, you should not need to migrate the database in order for them to work. However, you may need to restart your development server.
 
 Configuration
 *************
@@ -69,6 +69,35 @@ Special configuration properties:
 
 * ``webhook_slug``: If you are implementing a webhook listener, you can include this special property. When set, metagov core will expose the webhook endpoint at this slug. This is useful for creating hard-to-guess webhook receiver URL, in cases where the incoming requests can not be validated.
 
+Most plugins will use multiple jsonschemas. You may wish to keep your schemas in a separate file, which by convention is called `schemas.py`, as in `this example <https://github.com/metagov/metagov-prototype/blob/master/metagov/metagov/plugins/discourse/schemas.py>`_.
+
+Enabling the Plugin for a Community
+***********************************
+
+To create a new community with your plugin activated, make a PUT request to the ``community`` endpoint:
+
+.. code-block:: shell
+
+    curl -X PUT 'http://127.0.0.1:8000/api/internal/community/my-community-1234' \
+        -H 'Content-Type: application/json' \
+        --data-raw '{
+            "name": "my-community-1234",
+            "readable_name": "",
+            "plugins": [
+                {
+                    "name": "tutorial",
+                    "config": {
+                        "api_key": "ABC123",
+                        "foo": "baz"
+                    }
+                }
+            ]
+        }'
+
+
+See the Design Overview for more information about the data model.
+
+If you attempt to use a plugin without enabling it, you will get a ``RelatedObjectDoesNotExist`` error with message "Plugin has no community".
 
 Plugin Lifecycle
 ****************
@@ -81,8 +110,7 @@ If the community changes the plugin config, the plugin instance gets destroyed a
 Initialize
 ^^^^^^^^^^
 
-Override the ``initialize`` function to set up the plugin. It is called exactly once, when the plugin is created.
-
+You can optionally override the ``initialize`` function to do custom set up for the plugin. It is called exactly once, when the plugin is created.
 
 Persisting data
 ^^^^^^^^^^^^^^^
@@ -110,32 +138,6 @@ The data stored in ``state`` must be serializable using `jsonpickle <https://jso
 
 .. note:: If the plugin config is changed, the plugin instance gets destroyed and recreated. At that point, all ``state`` is lost.
 
-Enabling the Plugin for a Community
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-To create a new community with your plugin activated, make a PUT request to the ``community`` endpoint:
-
-.. code-block:: shell
-
-    curl -X PUT 'http://127.0.0.1:8000/api/internal/community/my-community-1234' \
-        -H 'Content-Type: application/json' \
-        --data-raw '{
-            "name": "my-community-1234",
-            "readable_name": "",
-            "plugins": [
-                {
-                    "name": "tutorial",
-                    "config": {
-                        "api_key": "ABC123",
-                        "foo": "baz"
-                    }
-                }
-            ]
-        }'
-
-
-See the Design Overview for more information about the data model.
-
 Disabling the Plugin for a Community
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -152,13 +154,11 @@ the Plugin model instance is deleted, and all data in ``state`` is lost.
             "plugins": []
         }'
 
-
 Actions
 *******
 
 If you want to expose a way for the governance driver to **perform an action** or **get data**,
-then you can implement an action. An action is just a function on your Plugin class that is registered
-with metagov core, and exposed as an API endpoint at ``/api/internal/action/<plugin>.<slug>``.
+then you can implement an action. An action is just a function on your Plugin class that is registered with metagov core, and exposed as an API endpoint at ``/api/internal/action/<plugin>.<slug>``.
 
 All you need to do is decorate your function with the ``@Registry.action`` decorator:
 
@@ -194,7 +194,6 @@ Now you should be able to invoke the action through the Metagov API:
             "parameters": { "value": 5 }
         }'
 
-
 Listener
 ********
 
@@ -226,9 +225,9 @@ webhooks from the platform. Use the ``send_event_to_driver`` function to send th
 Tasks
 ^^^^^
 
-If the external platform does not support webhooks, you can use the ``event_producer_task`` decorator to register a task function to poll the external service.
-Metagov core will call the registered task function on a schedule. The schedule is defined in ``settings.py``
-under ``plugin-tasks-beat``. The same schedule is used for all plugins, for now.
+If the external platform does not support webhooks, you can use the ``event_producer_task`` decorator to register a task function to poll the external service. Metagov core will call the registered task function on a schedule. The schedule is defined in ``settings.py`` under ``plugin-tasks-beat``. The same schedule is used for all plugins, for now.
+
+Event producer task methods will function like webhook receivers, except that instead of automatically receiving a request object, they have to make a request themselves to the external endpoint.
 
 .. code-block:: python
 
@@ -242,8 +241,7 @@ under ``plugin-tasks-beat``. The same schedule is used for all plugins, for now.
             # send event to the driver
             self.send_event_to_driver(...)
 
-
-See :doc:`Reference Documentation <../autodocs/core>` for the full specification.
+See :doc:`Reference Documentation <../autodocs/core>` for the full specification. To run tasks locally, use the Django shell following the instructions :ref:`here<Celery and Scheduled tasks>`.
 
 Webhook Receiver URLs
 ^^^^^^^^^^^^^^^^^^^^^
@@ -283,14 +281,13 @@ Anyone on the internet can post requests to the metagov webhook receiver endpoin
 Governance Processes
 ********************
 
-If you want to expose a way for the governance driver to perform an asynchronous governance process
-(such as a vote, election, or budgeting process) then you can implement a Governance Process. Governance
-processes are exposed as API endpoints at ``/api/internal/process/<plugin>.<slug>``.
+If you want to expose a way for the governance driver to perform an asynchronous governance process (such as a vote, election, or budgeting process) then you can implement a Governance Process. Governance processes are exposed as API endpoints at ``/api/internal/process/<plugin>.<slug>``.
 
-Create a proxy subclass of the ``GovernanceProcess`` Django model for our new governance process, ``MyGovProcess``.
-This model should be declared after the ``Tutorial`` model. Decorate it with the ``@Registry.governance_process``
-decorator so that Metagov core picks it up. In this example, the process will be exposed as an endpoint
-at ``/process/tutorial.my-gov-process``.
+Create a proxy subclass of the ``GovernanceProcess`` Django model for our new governance process, ``MyGovProcess``. This model should be declared after the ``Tutorial`` model. Decorate it with the ``@Registry.governance_process`` decorator so that Metagov core picks it up. In this example, the process will be exposed as an endpoint at ``/process/tutorial.my-gov-process``.
+
+You can optionally provide an ``input_schema``, which is a jsonschema with the same structure as the configuration schemas mentioned above.
+
+The GovernanceProcess object has access to the plugin instance it's associated with, through the attribute ``self.plugin_inst``.
 
 This snippet shows all possible functions you can implement on your proxy model:
 
@@ -308,12 +305,15 @@ This snippet shows all possible functions you can implement on your proxy model:
         def start(self, parameters):
             # Override this function (REQUIRED).
             # Kick off the asynchronous governance process and return immediately.
-            pass
+            self.status = ProcessStatus.PENDING.value
+            self.save()
 
         def close(self):
             # Override this function (OPTIONAL).
             # Close the governance process and save the outcome.
-            pass
+            self.outcome = "custom outcome data"  # optional
+            self.status = ProcessStatus.COMPLETED.value
+            self.save()
 
         def update(self):
             # Override this function (OPTIONAL).
@@ -330,42 +330,38 @@ This snippet shows all possible functions you can implement on your proxy model:
 Starting a governance process
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Implement the ``start`` method to kick off a new asynchronous governance process.
-Set the status to ``ProcessStatus.PENDING`` (or ``ProcessStatus.COMPLETED`` if unable to start the process).
-This method will be invoked through ``POST /api/internal/process/tutorial.my-gov-process``.
+Implement the ``start`` method to kick off a new asynchronous governance process. Set the status to ``ProcessStatus.PENDING`` (or ``ProcessStatus.COMPLETED`` if unable to start the process). This method will be invoked through ``POST /api/internal/process/tutorial.my-gov-process``.
+
+Updating a governance process
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Just as with Plugins, GovernanceProcesses can be updated either through a "push" (webhook-based) or "pull" (task-based) approach.
+
+**PUSH approach: Use "receive_webhook" to get notified when the state of the process changes.**
+
+Use this approach if you're implementing a process that is performed on an external platform that is capable of emitting a webhook when the process ends (and/or when the process changes, such as a vote is cast). Implement the ``receive_webhook`` listener. Use it to update status and outcome, if applicable. See the Loomio plugin for an example.
+
+**PULL approach: Use "update" to poll for changes in the process.**
+
+Implement ``update`` to check the status of the async process, possibly by making a request to an external platform. Update status and outcome, if applicable. Metagov core calls the ``update`` function every minute from a scheduled task. See the Discourse plugin for an example.
 
 Closing a governance process
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-There are multiple ways that a governance process can be "closed." A plugin may support one or several of them.
-A process is considered closed when the status is set to ``ProcessStatus.COMPLETED``.
+There are multiple ways that a governance process can be "closed." A plugin may support one or several of them. A process is considered closed when the status is set to ``ProcessStatus.COMPLETED``.
+
 Using the voting platform Loomio as an example, a vote can be closed in 3 ways:
 
 1) Loomio automatically closes the vote at a specified time ("closing_at").
 2) A Loomio user clicks "close proposal early" in the Loomio interface.
 3) The Driver closes the vote by making an API request to ``DELETE /api/internal/process/loomio.poll/<id>``. It may do this after a certain amount of time, or when a certain threshold of votes is reached, or for some other reason.
 
-To support (1) and (2), Metagov needs to be made aware that the platform has closed the vote. This can happen through a "push" or "pull" approach, depending on the capabilities of the platform (see below).
+To support (1) and (2), Metagov needs to be made aware that the platform has closed the vote. This can happen through a "push" or "pull" approach, depending on the capabilities of the platform (see above).
 
-To support (3), the governance process needs to implement the ``close`` function. In order to support the driver in making a threshold-decision about when to close, use the "push" or "pull" approach to update the process outcome as votes are cast.
-
+To support (3), the governance process needs to implement the ``close`` function. This close function will be called by either ``update`` or ``receive_webhook`` depending on whether you're using a pull or pull apprach. It should set status to ``ProcessStatus.COMPLETED``.
 
 ..
     Add fourth approach: Metagov-as-time-keeper.
-
-**PUSH approach: Use "receive_webhook" to get notified when the state of the process changes.**
-
-Use this approach if you're implementing a process that is performed on an external
-platform that is capable of emitting a webhook when the process ends (and/or when the process changes, such as a vote is cast).
-Implement the ``receive_webhook`` listener. Use it to update status and outcome, if applicable.
-See the Loomio plugin for an example.
-
-**PULL approach: Use "update" to poll for changes in the process.**
-
-Implement ``update`` to check the status of the async process, possibly by making
-a request to an external platform. Update status and outcome, if applicable.
-Metagov core calls the ``update`` function every minute from a scheduled task.
-See the Discourse plugin for an example.
 
 .. seealso:: See the :doc:`Reference Documentation <../autodocs/core>` for more information about the ``GovernanceProcess`` models.
 

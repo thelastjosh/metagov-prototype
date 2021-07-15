@@ -114,7 +114,7 @@ Use the Django shell to interact with the application:
 
         # Get the governance processes for a specific community
         GovernanceProcess.objects.filter(plugin__community=community)
-        
+
         # Get all pending processes
         GovernanceProcess.objects.filter(status='pending')
 
@@ -146,13 +146,7 @@ Updating this documentation
 
 This documentation is in the `docs <https://github.com/metagov/metagov-prototype/tree/master/docs>`_ directory.
 To update it, make changes to the ``.rst`` files.
-To generate the documentation locally, run this from the ``docs`` directory, with the metagov virtual environment is activated:
-
-.. code-block:: shell
-
-    sudo python -m sphinx -T -E -b html -d _build/doctrees -D language=en . _build/html
-    open _build/html/index.html
-
+To generate the documentation locally, run ``make html`` this from the ``docs`` directory, with the metagov virtual environment is activated.
 
 Testing Webhooks
 ----------------
