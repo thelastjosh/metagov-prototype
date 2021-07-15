@@ -6,7 +6,6 @@ import jsonpickle
 import requests
 import uuid
 from django.conf import settings
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.signals import pre_save
 from django.dispatch import receiver
@@ -14,6 +13,10 @@ from django.utils.translation import gettext_lazy as _
 
 logger = logging.getLogger(__name__)
 
+class AuthType:
+    API_KEY = "api_key"
+    OAUTH = "oauth"
+    NONE = "none"
 
 class Community(models.Model):
     slug = models.SlugField(
@@ -67,7 +70,10 @@ class Plugin(models.Model):
     )
     config = models.JSONField(default=dict, null=True, blank=True, help_text="Configuration for this plugin instance")
     state = models.OneToOneField(DataStore, models.CASCADE, help_text="Datastore to persist any state", null=True)
-    config_schema = {}  # can be overridden to set jsonschema of config
+
+    # Static metadata
+    auth_type = AuthType.NONE
+    config_schema = {}
 
     objects = PluginManager()
 

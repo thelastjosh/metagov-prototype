@@ -6,7 +6,7 @@ import metagov.plugins.opencollective.queries as Queries
 import metagov.plugins.opencollective.schemas as Schemas
 import requests
 from metagov.core.errors import PluginErrorInternal
-from metagov.core.models import GovernanceProcess, Plugin, ProcessStatus
+from metagov.core.models import GovernanceProcess, Plugin, ProcessStatus, AuthType
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ opencollective_url = "https://opencollective.com"
 @Registry.plugin
 class OpenCollective(Plugin):
     name = "opencollective"
+    auth_type = AuthType.API_KEY
     config_schema = {
         "type": "object",
         "additionalProperties": False,

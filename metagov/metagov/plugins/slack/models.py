@@ -6,7 +6,7 @@ from rest_framework.exceptions import ValidationError
 import metagov.core.plugin_decorators as Registry
 import requests
 from metagov.core.errors import PluginErrorInternal
-from metagov.core.models import GovernanceProcess, Plugin, ProcessStatus
+from metagov.core.models import GovernanceProcess, Plugin, ProcessStatus, AuthType
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 @Registry.plugin
 class Slack(Plugin):
     name = "slack"
+    auth_type = AuthType.OAUTH
     config_schema = {
         "type": "object",
         "properties": {
@@ -275,8 +276,7 @@ class SlackEmojiVote(GovernanceProcess):
         self.status = ProcessStatus.PENDING.value
         self.save()
 
-    @Registry.webhook_receiver()
-    def receive_event(self, request):
+    def receive_webhook(self, request):
         json_data = json.loads(request.body)
         data = json_data["event"]
         evt_type = data["type"]

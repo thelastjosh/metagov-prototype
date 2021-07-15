@@ -17,6 +17,9 @@ community_header = openapi.Parameter(
 community_slug_in_path = openapi.Parameter(
     "slug", openapi.IN_PATH, required=True, type=openapi.TYPE_STRING, description="Unique community slug"
 )
+plugin_name_in_path = openapi.Parameter(
+    "plugin_name", openapi.IN_PATH, required=True, type=openapi.TYPE_STRING, description="Plugin name"
+)
 
 plugins_list = openapi.Schema(
     type=openapi.TYPE_ARRAY,
@@ -38,114 +41,67 @@ create_community_schema = openapi.Schema(
     },
 )
 
-
-community_schema = openapi.Schema(
-    type=openapi.TYPE_OBJECT,
-    properties={
-        "slug": openapi.Schema(type=openapi.TYPE_STRING, description="Unique community slug"),
-        "readable_name": openapi.Schema(type=openapi.TYPE_STRING, description="Human-readable community name"),
-        "plugins": plugins_list,
-    },
-)
-
 plugin_schemas = {
     "method": "get",
     "operation_id": "Get plugin configuration schemas in jsonschema format",
     "tags": [Tags.COMMUNITY],
 }
 
-list_hooks = {
+plugin_metadata = {
     "method": "get",
-    "operation_id": "List community webhook receiver URLs",
+    "operation_id": "Get plugin metadata and schemas",
     "responses": {
         200: openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
-                "hooks": openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Items(type=openapi.TYPE_STRING),
-                )
+                "name": openapi.TYPE_STRING,
+                "auth_type": openapi.TYPE_STRING,
+                "uses_webhook": openapi.TYPE_BOOLEAN,
+                "schemas": openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "config": openapi.Schema(type=openapi.TYPE_OBJECT, description="jsonschema for plugin config"),
+                        "actions": openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Items(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    "id": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "description": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "parameters_schema": openapi.Schema(type=openapi.TYPE_OBJECT),
+                                    "response_schema": openapi.Schema(type=openapi.TYPE_OBJECT),
+                                },
+                            ),
+                        ),
+                        "processes": openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Items(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    "id": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "description": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "parameters_schema": openapi.Schema(type=openapi.TYPE_OBJECT),
+                                    "response_schema": openapi.Schema(type=openapi.TYPE_OBJECT),
+                                },
+                            ),
+                        ),
+                        "events": openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Items(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    "type": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "source": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "schema": openapi.Schema(type=openapi.TYPE_OBJECT),
+                                },
+                            ),
+                        ),
+                    },
+                ),
             },
         ),
     },
-    "manual_parameters": [community_slug_in_path],
-    "tags": [Tags.COMMUNITY],
-}
-
-list_actions = {
-    "method": "get",
-    "operation_id": "List available actions",
-    "responses": {
-        200: openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "actions": openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Items(
-                        type=openapi.TYPE_OBJECT,
-                        properties={
-                            "id": openapi.Schema(type=openapi.TYPE_STRING),
-                            "description": openapi.Schema(type=openapi.TYPE_STRING),
-                            "parameters_schema": openapi.Schema(type=openapi.TYPE_OBJECT),
-                            "response_schema": openapi.Schema(type=openapi.TYPE_OBJECT),
-                        },
-                    ),
-                )
-            },
-        ),
-    },
-    "manual_parameters": [community_slug_in_path],
-    "tags": [Tags.COMMUNITY],
-}
-
-list_processes = {
-    "method": "get",
-    "operation_id": "List available governance processes",
-    "responses": {
-        200: openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "processes": openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Items(
-                        type=openapi.TYPE_OBJECT,
-                        properties={
-                            "id": openapi.Schema(type=openapi.TYPE_STRING),
-                            "description": openapi.Schema(type=openapi.TYPE_STRING),
-                            "parameters_schema": openapi.Schema(type=openapi.TYPE_OBJECT),
-                            "response_schema": openapi.Schema(type=openapi.TYPE_OBJECT),
-                        },
-                    ),
-                )
-            },
-        ),
-    },
-    "manual_parameters": [community_slug_in_path],
-    "tags": [Tags.COMMUNITY],
-}
-
-list_events = {
-    "method": "get",
-    "operation_id": "List available events",
-    "responses": {
-        200: openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "events": openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Items(
-                        type=openapi.TYPE_OBJECT,
-                        properties={
-                            "type": openapi.Schema(type=openapi.TYPE_STRING),
-                            "source": openapi.Schema(type=openapi.TYPE_STRING),
-                            "schema": openapi.Schema(type=openapi.TYPE_OBJECT),
-                        },
-                    ),
-                )
-            },
-        ),
-    },
-    "manual_parameters": [community_slug_in_path],
+    "manual_parameters": [plugin_name_in_path],
     "tags": [Tags.COMMUNITY],
 }
 

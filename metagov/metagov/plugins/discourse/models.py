@@ -7,7 +7,7 @@ import metagov.core.plugin_decorators as Registry
 import metagov.plugins.discourse.schemas as Schemas
 import requests
 from metagov.core.errors import PluginErrorInternal
-from metagov.core.models import GovernanceProcess, Plugin, ProcessStatus
+from metagov.core.models import GovernanceProcess, Plugin, AuthType, ProcessStatus
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ TODO: add actions and events for "user actions":
 @Registry.plugin
 class Discourse(Plugin):
     name = "discourse"
+    auth_type = AuthType.API_KEY
     config_schema = {
         "type": "object",
         "additionalProperties": False,

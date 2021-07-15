@@ -5,7 +5,7 @@ import metagov.core.plugin_decorators as Registry
 import metagov.plugins.loomio.schemas as Schemas
 import requests
 from metagov.core.errors import PluginErrorInternal
-from metagov.core.models import GovernanceProcess, Plugin, ProcessStatus
+from metagov.core.models import GovernanceProcess, Plugin, ProcessStatus, AuthType
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 @Registry.plugin
 class Loomio(Plugin):
     name = "loomio"
+    auth_type = AuthType.API_KEY
     config_schema = {
         "type": "object",
         "properties": {"api_key": {"type": "string"}, "webhook_slug": {"type": "string"}},
@@ -48,6 +49,9 @@ class Loomio(Plugin):
         response = resp.json()
         return response
 
+    @Registry.webhook_receiver()
+    def loomio_webhook(self, request):
+        pass
 
 @Registry.governance_process
 class LoomioPoll(GovernanceProcess):
@@ -86,8 +90,7 @@ class LoomioPoll(GovernanceProcess):
         self.status = ProcessStatus.PENDING.value
         self.save()
 
-    @Registry.webhook_receiver()
-    def process_loomio_webhook(self, request):
+    def receive_webhook(self, request):
         poll_key = self.state.get("poll_key")
         poll_url = self.outcome.get("poll_url")
 

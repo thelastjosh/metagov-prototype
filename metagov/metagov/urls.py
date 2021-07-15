@@ -41,6 +41,9 @@ See the full documentation at https://docs.metagov.org/
 plugin_patterns = []
 
 for (key, cls) in plugin_registry.items():
+    enable_plugin_view = views.decorated_enable_plugin_view(cls.name)
+    plugin_patterns.append(path(f"{utils.internal_path}/plugin/{cls.name}", enable_plugin_view))
+
     for (slug, meta) in cls._action_registry.items():
         # Add view for action endpoint
         route = utils.construct_action_url(cls.name, slug)
@@ -93,14 +96,12 @@ urlpatterns = [
         views.plugin_config_schemas,
         name="plugin_config_schemas",
     ),
+    # Get public metadata about a plugin type
+    path(f"{utils.internal_path}/plugin/<slug:plugin_name>/metadata", views.plugin_metadata, name="plugin_metadata"),
+    # Disable plugin
+    path(f"{utils.internal_path}/plugin/<slug:plugin_name>/<int:id>", views.delete_plugin, name="delete_plugin"),
     # Create a new community
     path(f"{utils.internal_path}/community", views.create_community, name="community"),
     # Get, update, or delete a community
     path(f"{utils.internal_path}/community/<slug:slug>", views.community, name="community"),
-    # Get webhook receiver hooks for a given community
-    path(f"{utils.internal_path}/community/<slug:slug>/hooks", views.list_hooks, name="list_hooks"),
-    # Get actions, processes, and events available to a given community
-    path(f"{utils.internal_path}/community/<slug:slug>/actions", views.list_actions, name="list_actions"),
-    path(f"{utils.internal_path}/community/<slug:slug>/processes", views.list_processes, name="list_processes"),
-    path(f"{utils.internal_path}/community/<slug:slug>/events", views.list_events, name="list_events"),
 ] + plugin_patterns

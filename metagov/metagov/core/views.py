@@ -2,15 +2,12 @@ import base64
 import importlib
 import json
 import logging
-import random
 from http import HTTPStatus
 
 import jsonschema
 import metagov.core.openapi_schemas as MetagovSchemas
-from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, HttpResponseRedirect, JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.utils.decorators import decorator_from_middleware
 from django.views.decorators.csrf import csrf_exempt
 from drf_yasg import openapi
@@ -22,7 +19,7 @@ from metagov.core.models import Community, Plugin, ProcessStatus
 from metagov.core.openapi_schemas import Tags
 from metagov.core.plugin_constants import AuthType
 from metagov.core.plugin_decorators import plugin_registry
-from metagov.core.serializers import CommunitySerializer, GovernanceProcessSerializer
+from metagov.core.serializers import CommunitySerializer, GovernanceProcessSerializer, PluginSerializer
 from requests.models import PreparedRequest
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -32,8 +29,6 @@ from rest_framework.parsers import JSONParser
 community_middleware = decorator_from_middleware(CommunityMiddleware)
 
 logger = logging.getLogger(__name__)
-
-WEBHOOK_SLUG_CONFIG_KEY = "webhook_slug"
 
 
 def index(request):
@@ -45,7 +40,7 @@ def index(request):
     operation_id="Create community",
     operation_description="Create a new community",
     request_body=MetagovSchemas.create_community_schema,
-    responses={200: MetagovSchemas.community_schema, 201: MetagovSchemas.community_schema},
+    responses={200: CommunitySerializer, 201: CommunitySerializer},
     tags=[Tags.COMMUNITY],
 )
 @api_view(["POST"])
@@ -70,7 +65,7 @@ def create_community(request):
     operation_id="Get community",
     operation_description="Get the configuration for an existing community",
     manual_parameters=[MetagovSchemas.community_slug_in_path],
-    responses={200: MetagovSchemas.community_schema},
+    responses={200: CommunitySerializer},
     tags=[Tags.COMMUNITY],
 )
 @swagger_auto_schema(
@@ -78,8 +73,8 @@ def create_community(request):
     operation_id="Update community",
     operation_description="Update the configuration for an existing community",
     manual_parameters=[MetagovSchemas.community_slug_in_path],
-    request_body=MetagovSchemas.community_schema,
-    responses={200: MetagovSchemas.community_schema, 201: MetagovSchemas.community_schema},
+    request_body=CommunitySerializer,
+    responses={200: CommunitySerializer, 201: CommunitySerializer},
     tags=[Tags.COMMUNITY],
 )
 @api_view(["GET", "PUT", "DELETE"])
@@ -108,29 +103,67 @@ def community(request, slug):
         return JsonResponse({"message": "Community was deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
 
 
-@swagger_auto_schema(**MetagovSchemas.list_hooks)
-@api_view(["GET"])
-def list_hooks(request, slug):
+def decorated_enable_plugin_view(plugin_name):
+    """
+    Decorate the `enable_plugin` view with swagger schema properties defined by the plugin author
+    """
+    cls = plugin_registry[plugin_name]
+
+    @community_middleware
+    @api_view(["POST"])
+    def enable_plugin(request):
+        plugin_config = JSONParser().parse(request)
+        # Create or re-create the plugin (only one instance per community supported for now!)
+        plugin, created = utils.create_or_update_plugin(plugin_name, plugin_config, request.community)
+        # Serialize and return the Plugin instance
+        serializer = PluginSerializer(plugin)
+        resp_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return JsonResponse(serializer.data, status=resp_status)
+
+    request_body_schema = utils.json_schema_to_openapi_object(cls.config_schema) if cls.config_schema else {}
+
+    return swagger_auto_schema(
+        method="post",
+        responses={
+            201: openapi.Response(
+                "Plugin enabled",
+                PluginSerializer,
+            ),
+            200: openapi.Response(
+                "The Plugin was already enabled. Plugin was updated if the config changed.",
+                PluginSerializer,
+            ),
+        },
+        operation_id=f"Enable {plugin_name}",
+        tags=[Tags.COMMUNITY],
+        operation_description=f"Enable {plugin_name} plugin.",
+        manual_parameters=[MetagovSchemas.community_header],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                **request_body_schema.get("properties", {}),
+            },
+            required=request_body_schema.get("required", []),
+        ),
+    )(enable_plugin)
+
+
+@swagger_auto_schema(
+    method="delete",
+    operation_id="Disable plugin",
+    operation_description="Delete a plugin instance. This is an irreversible action.",
+    manual_parameters=[MetagovSchemas.plugin_name_in_path],
+    responses={204: "Plugin disabled successfully"},
+    tags=[Tags.COMMUNITY],
+)
+@api_view(["DELETE"])
+def delete_plugin(request, plugin_name, id):
     try:
-        community = Community.objects.get(slug=slug)
-    except Community.DoesNotExist:
+        plugin = Plugin.objects.get(pk=id)
+    except Plugin.DoesNotExist:
         return HttpResponseNotFound()
-
-    plugins = Plugin.objects.filter(community=community)
-    hooks = []
-    for p in list(plugins):
-        cls = plugin_registry[p.name]
-        if cls._webhook_receiver_function:
-            url = f"/api/hooks/{slug}/{p.name}"
-            if p.config and p.config.get(WEBHOOK_SLUG_CONFIG_KEY):
-                url += "/" + p.config.get(WEBHOOK_SLUG_CONFIG_KEY)
-            hooks.append(url)
-    return JsonResponse({"hooks": hooks})
-
-
-def generate_nonce(length=8):
-    """Generate pseudorandom number."""
-    return "".join([str(random.randint(0, 9)) for i in range(length)])
+    plugin.delete()
+    return HttpResponse(status=status.HTTP_204_NO_CONTENT)
 
 
 @swagger_auto_schema(**MetagovSchemas.plugin_authorize)
@@ -164,7 +197,7 @@ def plugin_authorize(request, plugin_name):
             return HttpResponseBadRequest(f"No such community: {community}")
 
     # Create the state
-    nonce = generate_nonce()
+    nonce = utils.generate_nonce()
     state = {nonce: {"community": community, "redirect_uri": redirect_uri, "type": type}}
     state_str = json.dumps(state).encode("ascii")
     state_encoded = base64.b64encode(state_str).decode("ascii")
@@ -250,27 +283,26 @@ def plugin_auth_callback(request, plugin_name):
         )
 
 
-@swagger_auto_schema(**MetagovSchemas.list_actions)
+@swagger_auto_schema(**MetagovSchemas.plugin_metadata)
 @api_view(["GET"])
-def list_actions(request, slug):
-    try:
-        community = Community.objects.get(slug=slug)
-    except Community.DoesNotExist:
-        return HttpResponseNotFound()
+def plugin_metadata(request, plugin_name):
+    cls = plugin_registry.get(plugin_name)
+    if not cls:
+        return HttpResponseBadRequest(f"No such plugin: {plugin_name}")
 
-    actions = []
-    for plugin in Plugin.objects.filter(community=community):
-        cls = plugin_registry.get(plugin.name)
-        for (name, meta) in cls._action_registry.items():
-            actions.append(
-                {
-                    "id": f"{plugin.name}.{name}",
-                    "description": meta.description,
-                    "parameters_schema": meta.input_schema,
-                    "response_schema": meta.output_schema,
-                }
-            )
-    return JsonResponse({"actions": actions})
+    return JsonResponse(
+        {
+            "name": cls.name,
+            "auth_type": cls.auth_type,
+            "uses_webhook": utils.plugin_uses_webhooks(cls),
+            "schemas": {
+                "config": cls.config_schema,
+                "actions": utils.get_action_schemas(cls),
+                "events": utils.get_event_schemas(cls),
+                "processes": utils.get_process_schemas(cls),
+            },
+        }
+    )
 
 
 @swagger_auto_schema(**MetagovSchemas.plugin_schemas)
@@ -280,46 +312,6 @@ def plugin_config_schemas(request):
     for (name, cls) in plugin_registry.items():
         plugins[name] = cls.config_schema
     return JsonResponse(plugins)
-
-
-@swagger_auto_schema(**MetagovSchemas.list_events)
-@api_view(["GET"])
-def list_events(request, slug):
-    try:
-        community = Community.objects.get(slug=slug)
-    except Community.DoesNotExist:
-        return HttpResponseNotFound()
-
-    result = []
-    for plugin in Plugin.objects.filter(community=community):
-        cls = plugin_registry.get(plugin.name)
-        for event in cls._event_schemas:
-            if event.get("type"):
-                result.append({"event_type": event["type"], "source": plugin.name, "schema": event.get("schema")})
-    return JsonResponse({"events": result})
-
-
-@swagger_auto_schema(**MetagovSchemas.list_processes)
-@api_view(["GET"])
-def list_processes(request, slug):
-    try:
-        community = Community.objects.get(slug=slug)
-    except Community.DoesNotExist:
-        return HttpResponseNotFound()
-
-    processes = []
-    for plugin in Plugin.objects.filter(community=community):
-        cls = plugin_registry.get(plugin.name)
-        for (name, process_cls) in cls._process_registry.items():
-            processes.append(
-                {
-                    "id": f"{plugin.name}.{name}",
-                    "description": process_cls.description,
-                    "parameters_schema": process_cls.input_schema,
-                    "response_schema": process_cls.outcome_schema,
-                }
-            )
-    return JsonResponse({"processes": processes})
 
 
 @csrf_exempt
@@ -339,7 +331,7 @@ def receive_webhook(request, community, plugin_name, webhook_slug=None):
     plugin = get_plugin_instance(plugin_name, community)
 
     # Validate slug if the plugin has `webhook_slug` configured
-    expected_slug = plugin.config.get(WEBHOOK_SLUG_CONFIG_KEY)
+    expected_slug = plugin.config.get(utils.WEBHOOK_SLUG_CONFIG_KEY)
     if webhook_slug != expected_slug:
         logger.error(f"Received request at {webhook_slug}, expected {expected_slug}. Rejecting.")
         return HttpResponseBadRequest()
