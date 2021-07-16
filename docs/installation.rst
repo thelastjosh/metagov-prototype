@@ -138,12 +138,12 @@ Make sure you have a domain dedicated to Metagov that is pointing to your server
                 </VirtualHost>
         </IfModule>
 
-4. Test your config with ``apache2ctl configtest``. You should get a "Syntax OK" as a response. 
+4. Test your config with ``apache2ctl configtest``. You should get a "Syntax OK" as a response.
 
 5. Enable your site:
 
     .. code-block:: shell
-        
+
         # activate your config
         a2ensite /etc/apache2/sites-available/$SERVER_NAME.conf
 
@@ -408,3 +408,14 @@ needs to create a new Slack App and store its credentials on the Metagov server:
 
         systemctl reload apache2
 
+
+Github
+""""""
+
+In order to ues the Metagov Github plugin, the Metagov server administrator needs to create a new Github app and link it to Metagov:
+
+1. Create a metagov app and get the app ID. You can follow `this guide <https://docs.github.com/en/developers/apps/building-github-apps/creating-a-github-app>`_. Don't forget to `set permissions and subscribe to events <https://docs.github.com/en/developers/apps/managing-github-apps/editing-a-github-apps-permissions>`_.
+2. On Github, generate and download a `private key <https://docs.github.com/en/developers/apps/building-github-apps/authenticating-with-github-apps#generating-a-private-key>`_. Put the private key in the github plugin folder.
+3. Make a copy of ``.env.example`` and rename it to ``.env``. Put the app ID in the file as well as the path to your private key.
+
+The plugin should now work. To use the app in their community, an admin will have to install the app manually on Github. They will then provide the installation ID and organization name as configuration parameters when enabling the plugin. We are working to make this process smoother in the future.
