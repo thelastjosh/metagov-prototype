@@ -82,7 +82,7 @@ class Github(Plugin):
         if resp.status_code == 401 and refresh == False:
             logger.info(f"Bad credentials, refreshing token and retrying")
             self.refresh_token()
-            return self.github_request(method=method, route=route, data=data, add_header=add_headers, refresh=True)
+            return self.github_request(method=method, route=route, data=data, add_headers=add_headers, refresh=True)
         if not resp.ok:
             logger.error(f"Request error for {method}, {route}; status {resp.status_code}, details: {resp.text}")
             raise PluginErrorInternal(resp.text)
@@ -138,6 +138,7 @@ class GithubIssueReactVote(GovernanceProcess):
         issue = self.plugin_inst.create_issue(parameters=parameters)
 
         self.state.set("issue_number", issue["number"])
+        self.state.set("bot_id", issue["user"]["id"])
         self.status = ProcessStatus.PENDING.value
         self.save()
         logger.info(f"Starting IssueReactVote with issue # {issue['number']}")
@@ -221,6 +222,7 @@ class GithubIssueCommentVote(GovernanceProcess):
 
         # save
         self.state.set("issue_number", issue["number"])
+        self.state.set("bot_id", issue["user"]["id"])
         self.status = ProcessStatus.PENDING.value
         self.save()
         logger.info(f"Starting IssueCommentVote with issue # {issue['number']}")
@@ -241,8 +243,8 @@ class GithubIssueCommentVote(GovernanceProcess):
         voter_list = []  #
         votes = Counter()
         for comment in comments:
-            body, user = comment["body"], comment["user"]["login"]
-            if user in voter_list or user == USERNAME:
+            body, user, user_id = comment["body"], comment["user"]["login"], comment["user"]["id"]
+            if user in voter_list or user_id == self.state.get("bot_id"):
                 continue
             voter_list.append(user)
             vote_split = body.split("^^^^")
@@ -275,7 +277,7 @@ class GithubIssueCommentVote(GovernanceProcess):
 
     def receive_webhook(self, request):
         action_type, action_target_type, initiator, body = self.plugin_inst.parse_github_webhook(request)
-        if action_target_type != "issue_comment" or initiator["user_name"] == USERNAME:
+        if action_target_type != "issue_comment" or initiator["user_id"] == self.state.get("bot_id"):
             return
         if body["issue"]["number"] == self.state.get("issue_number") and action_type in ["created", "edited", "deleted"]:
             voter_list, votes = self.get_vote_data()
